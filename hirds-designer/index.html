@@ -146,10 +146,12 @@ tr.pk td{color:var(--peak);font-weight:500}
       <div class="tabs" role="tablist">
         <button role="tab" data-tab="storm" aria-selected="true">Design storm</button>
         <button role="tab" data-tab="curves" aria-selected="false">Depth and intensity curves</button>
+        <button role="tab" data-tab="saved" aria-selected="false">Saved designs <span id="savedn"></span></button>
         <button role="tab" data-tab="data" aria-selected="false">Data</button>
       </div>
       <div id="tab-storm"></div>
       <div id="tab-curves" hidden></div>
+      <div id="tab-saved" hidden></div>
       <div id="tab-data" hidden></div>
     </main>
   </div>
@@ -382,10 +384,12 @@ function renderResults(){
   var csv=tableCSV(st),body="";
   for(var i=0;i<st.n;i++)body+='<tr'+(i===st.pk?' class="pk"':'')+'><td>'+fmt(i*dtH,2)+' to '+fmt((i+1)*dtH,2)+' h</td><td>'+fmt(st.blocks[i],2)+'</td><td>'+fmt(st.cum[i+1],2)+'</td><td>'+fmt(st.blocks[i]/dtH,1)+'</td></tr>';
   $("tab-storm").innerHTML=stormChart(st)+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:14px 0 4px"><div class="field" style="flex:1 1 240px;margin:0"><label for="dname">Name this design to keep it for reference</label><input type="text" id="dname" value="'+esc(prof().name.replace(/ \(illustrative only\)/,"")+" "+S.ari+"y "+durLabel(S.dur))+'"></div><button class="primary" id="savedes" type="button">Save design</button></div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 8px"><h2 style="margin:0">Hyetograph table</h2><button class="primary" id="copycsv" type="button">Copy as CSV</button><span class="hint" style="margin:0">Paste into Excel or a hydrological model.</span></div>'+
     '<div class="scroll"><table><thead><tr><th>Interval</th><th>Depth (mm)</th><th>Cumulative (mm)</th><th>Intensity (mm/h)</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
     '<textarea id="csvbox" rows="3" style="margin-top:8px" readonly aria-label="CSV text">'+esc(csv)+'</textarea>';
   $("copycsv").onclick=function(){copy(csv,$("csvbox"))};
+  $("savedes").onclick=function(){var d=snapDesign($("dname").value||"Untitled design");designs.unshift(d);save("rd.designs",designs);renderSaved();toast("Saved. See the Saved designs tab")};
 
   // curves tab
   var hd="",rows="";
@@ -415,7 +419,60 @@ function renderResults(){
   var tp=false;$("tp").onclick=function(){tp=!tp;this.setAttribute("aria-pressed",tp)};
   $("doimport").onclick=function(){doImport($("paste").value,tp)};
   $("file").onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){$("paste").value=r.result;doImport(r.result,tp)};r.readAsText(f)};
-  showTab();
+  renderSaved();showTab();
+}
+
+var designs=load("rd.designs")||[];
+function snapDesign(name){
+  var st=designStorm(),p=prof(),dtH=S.dt/60;
+  return {id:"d"+Date.now(),ts:new Date().toISOString(),name:name,site:p.name,pid:p.id,example:!!p.sample,
+    set:{ari:S.ari,dur:S.dur,dt:S.dt,pat:S.pat,creg:S.creg,peak:S.peak,area:S.area,areg:S.areg,scen:S.scen,per:S.per,dT:S.dT},
+    total:st.total,peakI:Math.max.apply(null,st.blocks)/dtH,arf:arfInfo(S.dur,S.ari).v,cc:ccFactor(S.dur,S.ari),blocks:st.blocks,cum:st.cum};
+}
+function designCSV(d){
+  var dtH=d.set.dt/60,patName=d.set.pat==="hirds"?"HIRDS v4 regional pattern ("+REGIONS[d.set.creg].n+")":"Alternating block, peak at "+Math.round(d.set.peak*100)+"%";
+  var r=["Design,"+JSON.stringify(d.name),"Site,"+JSON.stringify(d.site)+(d.example?" (EXAMPLE DATA, not HIRDS)":""),"Saved,"+d.ts,
+    "ARI_years,"+d.set.ari,"Duration_h,"+d.set.dur,"Time_step_min,"+d.set.dt,"Pattern,"+JSON.stringify(patName),
+    "Catchment_km2,"+d.set.area,"ARF,"+fmt(d.arf,3),"Climate_scenario,"+(d.set.scen==="none"?"Current climate":d.set.scen==="custom"?"Custom "+d.set.dT+" C":RCPS[d.set.scen].n+" "+PERIODS[d.set.per]),
+    "Climate_factor,"+fmt(d.cc,3),"Total_depth_mm,"+fmt(d.total,2),"Peak_intensity_mm_per_h,"+fmt(d.peakI,2),"",
+    "Step,Start_h,End_h,Increment_mm,Cumulative_mm,Intensity_mm_per_h"];
+  d.blocks.forEach(function(b,i){r.push([i+1,fmt(i*dtH,3),fmt((i+1)*dtH,3),fmt(b,2),fmt(d.cum[i+1],2),fmt(b/dtH,2)].join(","))});
+  return r.join("\n");
+}
+function summaryCSV(){
+  var r=["Name,Site,Saved,ARI_years,Duration_h,Pattern,Area_km2,Climate,Total_depth_mm,Peak_intensity_mm_per_h,ARF,Climate_factor,Example_data"];
+  designs.forEach(function(d){r.push([JSON.stringify(d.name),JSON.stringify(d.site),d.ts.slice(0,16).replace("T"," "),d.set.ari,d.set.dur,d.set.pat==="hirds"?"HIRDS "+d.set.creg:"Alt block",d.set.area,d.set.scen==="none"?"Current":d.set.scen==="custom"?d.set.dT+" C":d.set.scen+" P"+(d.set.per+1),fmt(d.total,1),fmt(d.peakI,1),fmt(d.arf,3),fmt(d.cc,3),d.example?"yes":"no"].join(","))});
+  return r.join("\n");
+}
+function download(name,text,type){
+  try{var b=new Blob([text],{type:type||"text/csv"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);toast("Download started. If nothing arrives, use Copy instead")}catch(e){toast("Download not available here, use Copy instead")}
+}
+function renderSaved(){
+  $("savedn").textContent=designs.length?"("+designs.length+")":"";
+  var rows=designs.map(function(d){return '<tr><td style="font-family:var(--f-body)">'+esc(d.name)+(d.example?' <b style="color:var(--peak)">(example data)</b>':'')+'</td><td style="font-family:var(--f-body)">'+esc(d.site)+'</td><td>'+d.set.ari+' y</td><td>'+durLabel(d.set.dur)+'</td><td>'+fmt(d.total,1)+'</td><td>'+fmt(d.peakI,1)+'</td><td>'+d.ts.slice(0,10)+'</td>'+
+    '<td style="text-align:left"><div class="btns"><button type="button" data-dload="'+d.id+'">Load</button><button type="button" data-dcsv="'+d.id+'">Copy CSV</button><button type="button" data-dfile="'+d.id+'">Download</button><button type="button" class="danger" data-ddel="'+d.id+'">Delete</button></div></td></tr>'}).join("");
+  $("tab-saved").innerHTML=(designs.length?
+    '<div class="scroll"><table><thead><tr><th>Design</th><th>Site</th><th>ARI</th><th>Duration</th><th>Depth (mm)</th><th>Peak (mm/h)</th><th>Saved</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="btns" style="margin-top:10px"><button class="primary" id="dlsum" type="button">Download summary CSV</button><button id="cpsum" type="button">Copy summary CSV</button><button id="dlall" type="button">Download all hyetographs CSV</button></div>':
+    '<p>No saved designs yet. Set up a storm, then press <b>Save design</b> under the chart on the Design storm tab. Each saved design keeps its settings, depth, peak and full hyetograph.</p>')+
+    '<h2 style="margin:20px 0 8px">Backup and restore</h2><p class="hint" style="margin:0 0 8px">Profiles and saved designs live in this browser only. Download a backup file to keep them safely or move them to another computer.</p>'+
+    '<div class="btns"><button id="dlbk" type="button" class="primary">Download backup (JSON)</button><button id="cpbk" type="button">Copy backup text</button><label class="chip" style="margin:0;border:1px solid var(--line);cursor:pointer;color:var(--ink)">Restore from backup file<input id="bkfile" type="file" accept=".json" hidden></label></div>'+
+    '<textarea id="outbox" rows="3" style="margin-top:10px" readonly aria-label="Export text" placeholder="Copied or exported text appears here as a fallback"></textarea>';
+  function box(t){$("outbox").value=t}
+  function backup(){return JSON.stringify({app:"rainfall-designer",version:1,profiles:profiles,designs:designs,settings:S})}
+  if($("dlsum")){
+    $("dlsum").onclick=function(){var t=summaryCSV();box(t);download("rainfall-designs-summary.csv",t)};
+    $("cpsum").onclick=function(){var t=summaryCSV();box(t);copy(t,$("outbox"))};
+    $("dlall").onclick=function(){var t=designs.map(designCSV).join("\n\n");box(t);download("rainfall-designs-hyetographs.csv",t)};
+  }
+  $("dlbk").onclick=function(){var t=backup();box(t);download("rainfall-designer-backup.json",t,"application/json")};
+  $("cpbk").onclick=function(){var t=backup();box(t);copy(t,$("outbox"))};
+  $("bkfile").onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){
+    try{var o=JSON.parse(r.result);if(!Array.isArray(o.profiles)||!Array.isArray(o.designs))throw 0;
+      o.profiles.forEach(function(q){if(!profiles.some(function(x){return x.id===q.id}))profiles.push(q)});
+      o.designs.forEach(function(q){if(!designs.some(function(x){return x.id===q.id}))designs.push(q)});
+      designs.sort(function(a,b){return a.ts<b.ts?1:-1});save("rd.designs",designs);persist();renderSetup();renderResults();showTab("saved");toast("Backup restored")}
+    catch(e){toast("That file is not a Rainfall Designer backup")}};r.readAsText(f)};
 }
 
 function parseDur(s){
@@ -447,7 +504,7 @@ function doImport(text,transpose){
 
 function showTab(t){
   if(t)S.tab=t;
-  ["storm","curves","data"].forEach(function(k){$("tab-"+k).hidden=S.tab!==k});
+  ["storm","curves","saved","data"].forEach(function(k){$("tab-"+k).hidden=S.tab!==k});
   document.querySelectorAll("[role=tab]").forEach(function(b){b.setAttribute("aria-selected",b.dataset.tab===S.tab)});
 }
 
@@ -468,6 +525,12 @@ document.addEventListener("click",function(e){
   if(b.dataset.dur){S.dur=+b.dataset.dur;persist();renderSetup();renderResults()}
   else if(b.dataset.peak){S.peak=+b.dataset.peak;persist();renderSetup();renderResults()}
   else if(b.dataset.tab){showTab(b.dataset.tab);persist()}
+  else if(b.dataset.dload){var d=designs.filter(function(x){return x.id===b.dataset.dload})[0];if(d){Object.assign(S,d.set);if(profiles.some(function(q){return q.id===d.pid}))S.pid=d.pid;else toast("Original site profile not found, using current profile");persist();renderSetup();renderResults();showTab("storm")}}
+  else if(b.dataset.dcsv||b.dataset.dfile||b.dataset.ddel){var id=b.dataset.dcsv||b.dataset.dfile||b.dataset.ddel,d2=designs.filter(function(x){return x.id===id})[0];if(!d2)return;
+    if(b.dataset.ddel){if(!b.dataset.arm){b.dataset.arm=1;b.textContent="Confirm";setTimeout(function(){delete b.dataset.arm;b.textContent="Delete"},3000);return}
+      designs=designs.filter(function(x){return x.id!==id});save("rd.designs",designs);renderSaved();renderResults();showTab("saved")}
+    else if(b.dataset.dcsv){var t=designCSV(d2);$("outbox").value=t;copy(t,$("outbox"))}
+    else{var t2=designCSV(d2);$("outbox").value=t2;download(d2.name.replace(/[^\w-]+/g,"_")+".csv",t2)}}
   else if(b.dataset.metric){S.metric=b.dataset.metric;persist();renderResults();showTab("curves")}
 });
 function clone(p,name){return JSON.parse(JSON.stringify(Object.assign({},p,{id:"p"+Date.now(),name:name,sample:p.sample})))}
