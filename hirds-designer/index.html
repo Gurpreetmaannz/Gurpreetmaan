@@ -19,6 +19,7 @@
   --accent:#4cc3cd; --accent-ink:#06242a; --accent-soft:#183b43; --peak:#f0a24a; --warn-bg:#3a2c10; --warn-ink:#f4d9a6;
   --bar:#3fb1bb; --grid:#223540; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;
   padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
 .wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
@@ -51,6 +52,7 @@ button.danger:hover{border-color:#c0392b;color:#c0392b}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .stat{padding:10px 12px;border-radius:8px;background:var(--accent-soft)}
 .stat b{display:block;font-family:var(--f-mono);font-size:1.45rem;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat b.sm{font-size:1.05rem;line-height:1.7}
 .stat span{font-size:.78rem;color:var(--muted)}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-4px 0 14px;overflow-x:auto}
 .tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted);white-space:nowrap}
@@ -100,12 +102,17 @@ tr.pk td{color:var(--peak);font-weight:500}
         <div class="field"><label for="dur">Storm duration (hours)</label>
           <input id="dur" type="number" min="0.1" step="0.5">
           <div class="chips" id="durchips" style="margin-top:6px"></div></div>
-        <div class="row">
-          <div class="field"><label for="dt">Time step</label>
-            <select id="dt"><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hour</option></select></div>
-          <div class="field"><label for="arf">Area reduction (%)</label><input id="arf" type="number" min="50" max="100" step="1"></div>
-        </div>
-        <div class="field"><label for="peak">Peak position: <span id="peakv"></span></label>
+        <div class="field"><label for="dt">Time step</label>
+          <select id="dt"><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hour</option></select></div>
+      </section>
+
+      <section>
+        <h2>Storm shape</h2>
+        <div class="field"><label for="pat">Temporal pattern</label>
+          <select id="pat"><option value="hirds">HIRDS v4 regional pattern</option><option value="alt">Alternating block (adjustable peak)</option></select></div>
+        <div class="field" id="cregbox"><label for="creg">Climate region</label><select id="creg"></select>
+          <p class="hint" id="cregnote"></p></div>
+        <div class="field" id="peakbox"><label for="peak">Peak position: <span id="peakv"></span></label>
           <input id="peak" type="range" min="0" max="1" step="0.05">
           <div class="chips" style="margin-top:6px">
             <button class="chip" type="button" data-peak="0.1">Front</button>
@@ -116,12 +123,20 @@ tr.pk td{color:var(--peak);font-weight:500}
       </section>
 
       <section>
+        <h2>Catchment area</h2>
+        <div class="field"><label for="area">Catchment area (km², 0 for a point)</label><input id="area" type="number" min="0" step="1"></div>
+        <div class="field"><label for="areg">Areal reduction method</label><select id="areg"></select>
+          <p class="hint" id="arfnote"></p></div>
+      </section>
+
+      <section>
         <h2>Climate change</h2>
+        <div class="field"><label for="scen">Scenario</label><select id="scen"></select></div>
         <div class="row">
-          <div class="field"><label for="dT">Warming (°C)</label><input id="dT" type="number" min="0" max="6" step="0.1"></div>
-          <div class="field"><label for="rate">Uplift (% per °C)</label><input id="rate" type="number" min="0" max="20" step="0.5"></div>
+          <div class="field" id="perbox"><label for="per">Period</label><select id="per"></select></div>
+          <div class="field" id="dTbox"><label for="dT">Warming (°C)</label><input id="dT" type="number" min="0" max="6" step="0.1"></div>
         </div>
-        <p class="hint">Depths are multiplied by (1 + uplift)<sup>warming</sup>. Use the values your council or the MfE guidance specifies. Factor applied: <b id="cf"></b></p>
+        <p class="hint" id="ccnote"></p>
       </section>
     </aside>
 
@@ -161,7 +176,7 @@ function sampleProfile(){
     sample:true,durs:STD_DURS.slice(),aris:STD_ARIS.slice(),depth:d};
 }
 var profiles=load("rd.profiles")||[sampleProfile()];
-var S=Object.assign({pid:profiles[0].id,ari:100,dur:24,dt:30,peak:.5,dT:0,rate:7,arf:100,tab:"storm"},load("rd.settings")||{});
+var S=Object.assign({pid:profiles[0].id,ari:100,dur:24,dt:30,peak:.5,pat:"hirds",creg:"NZ",area:0,areg:"auto",scen:"none",per:2,dT:0,tab:"storm"},load("rd.settings")||{});
 function prof(){return profiles.filter(function(p){return p.id===S.pid})[0]||profiles[0]}
 function persist(){save("rd.profiles",profiles);save("rd.settings",S)}
 
@@ -184,12 +199,61 @@ function depthAt(p,Dh,T){ // depth in mm, interpolated in log duration and ln AR
   });
   return {v:lerp(vals[0],vals[1],sa.t),out:sd.out||(Math.log(T)<la[0]-1e-9||Math.log(T)>la[la.length-1]+1e-9)};
 }
-function cfactor(){return Math.pow(1+S.rate/100,S.dT)}
 function aepPct(T){return 100*(1-Math.exp(-1/T))}
 
+/* ---------- parameters from NIWA report 2018022CH (HIRDS v4) ---------- */
+var TD=[1,6,12,24,48,72];
+var REGIONS={
+ NZ:{n:"New Zealand (all regions)",WL:[3.24,3.23,3.57,4.00,5.19,4.75],WR:[3.91,3.55,4.09,4.61,4.51,4.45],m:[.57,.52,.52,.53,.45,.48],q:[.57,.56,.56,.55,.45,.43]},
+ NNI:{n:"North of North Island",WL:[3.58,3.05,3.55,4.71,4.85,5.52],WR:[3.99,4.58,4.76,4.72,6.13,5.89],m:[.55,.55,.58,.52,.51,.50],q:[.54,.65,.63,.54,.53,.46]},
+ WNI:{n:"West of North Island",WL:[4.28,4.77,4.57,5.52,5.44,4.60],WR:[3.94,2.63,3.68,4.03,3.02,2.95],m:[.50,.38,.56,.43,.43,.65],q:[.49,.45,.53,.46,.35,.35]},
+ ENI:{n:"East of North Island",WL:[3.54,3.31,3.25,3.3,5.18,2.86],WR:[3.28,3.53,3.88,4.48,4.28,7.75],m:[.50,.48,.54,.57,.43,.65],q:[.51,.52,.57,.58,.46,.63]},
+ NSI:{n:"North of South Island",WL:[2.79,3.04,3.80,4.20,5.79,6.77],WR:[4.55,3.78,4.33,5.86,5.46,4.52],m:[.56,.54,.51,.54,.44,.44],q:[.60,.59,.56,.59,.43,.35]},
+ WSI:{n:"West of South Island",WL:[2.96,3.52,4.05,3.24,5.40,2.46],WR:[3.85,3.21,3.40,4.53,3.21,6.92],m:[.59,.46,.46,.56,.46,.65],q:[.58,.49,.48,.56,.35,.62]},
+ ESI:{n:"East of South Island",WL:[4.38,3.27,4.07,3.75,5.39,5.93],WR:[3.12,3.35,3.52,4.66,6.38,6.78],m:[.40,.50,.45,.55,.51,.65],q:[.41,.51,.48,.54,.50,.51]}
+};
+var ARFP={ AKL:{n:"Auckland",c:.024,d:.62,a:.41}, CHC:{n:"Christchurch (Canterbury and Otago plains)",c:.026,d:.46,a:.41}, TAS:{n:"Tasman",c:.015,d:.51,a:.48}, ALL:{n:"All regions (no return period term)",c:.024,d:.53,a:.41} };
+var CC_D=[1,2,6,12,24,48,72,96,120], CC_T=[2,5,10,20,30,40,50,60,80,100];
+var CC=[[12.2,12.8,13.1,13.3,13.4,13.4,13.5,13.5,13.6,13.6],[11.7,12.3,12.6,12.8,12.9,12.9,13.0,13.0,13.1,13.1],[9.8,10.5,10.8,11.1,11.2,11.3,11.3,11.4,11.4,11.5],[8.5,9.2,9.5,9.7,9.8,9.9,9.9,10.0,10.0,10.1],[7.2,7.8,8.1,8.2,8.3,8.4,8.4,8.5,8.5,8.6],[6.1,6.7,7.0,7.2,7.3,7.3,7.4,7.4,7.5,7.5],[5.5,6.2,6.5,6.6,6.7,6.8,6.8,6.9,6.9,6.9],[5.1,5.7,6.0,6.2,6.3,6.3,6.4,6.4,6.4,6.5],[4.8,5.4,5.7,5.8,5.9,6.0,6.0,6.0,6.1,6.1]];
+var PERIODS=["2031 to 2050","2056 to 2075","2081 to 2100","2101 to 2120 (use with caution)"];
+var RCPS={rcp26:{n:"RCP 2.6",t:[.59,.67,.59,.59]},rcp45:{n:"RCP 4.5",t:[.74,1.05,1.21,1.44]},rcp60:{n:"RCP 6.0",t:[.68,1.16,1.63,2.31]},rcp85:{n:"RCP 8.5",t:[.85,1.65,2.58,3.13]}};
+
+function warming(){ if(S.scen==="none")return 0; if(S.scen==="custom")return S.dT; return RCPS[S.scen].t[S.per]; }
+function ccPct(D,T){ // % depth change per degC, Table 6, interpolated in ln D and ln ARI, held at table limits
+  var a=seg(CC_D.map(Math.log),Math.log(Math.min(Math.max(D,CC_D[0]),CC_D[CC_D.length-1])),true);
+  var b=seg(CC_T.map(Math.log),Math.log(Math.min(Math.max(T,CC_T[0]),CC_T[CC_T.length-1])),true);
+  var r=[a.i,a.i+1].map(function(i){return lerp(CC[i][b.i],CC[i][b.i+1],b.t)});
+  return lerp(r[0],r[1],a.t);
+}
+function ccFactor(D,T){return 1+ccPct(D,T)/100*warming()}
+function arfInfo(D,T){
+  var A=S.area; if(!(A>0))return {v:1,eq:"none"};
+  var useEq7=S.areg==="auto"&&D<=24&&A>20, P=useEq7?{c:.023,d:.52,a:.43}:ARFP[S.areg==="auto"?"ALL":S.areg], v;
+  v=1-P.c*Math.pow(A,P.a)*Math.pow(D,-P.d)*(useEq7?Math.pow(Math.log(Math.max(T,1.0001)),.23):1);
+  return {v:Math.max(.3,Math.min(1,v)),eq:useEq7?"7":"6"};
+}
+function adj(D,T){return ccFactor(D,T)*arfInfo(D,T).v}
+function tanhParams(id,D){
+  var R=REGIONS[id],k=seg(TD.map(Math.log),Math.log(Math.min(Math.max(D,TD[0]),TD[TD.length-1])),true),o={out:D<TD[0]||D>TD[TD.length-1]};
+  ["WL","WR","m","q"].forEach(function(key){o[key]=lerp(R[key][k.i],R[key][k.i+1],k.t)});return o;
+}
+function tanhBlocks(id,N,D,total){
+  var q=tanhParams(id,D),P=function(x){return x<=q.q?q.m*Math.tanh((x-q.q)*q.WL)+q.m:(1-q.m)*Math.tanh((x-q.q)*q.WR)+q.m};
+  var R=[],i;for(i=0;i<=N;i++)R.push(P(i/N));
+  var inc=[],delta=(1-(R[N]-R[0]))/N,sum=0;
+  for(i=1;i<=N;i++){var v=Math.max(0,R[i]-R[i-1]+delta);inc.push(v);sum+=v}
+  return {blocks:inc.map(function(v){return v/sum*total}),out:q.out};
+}
+
 function designStorm(){
-  var p=prof(),n=Math.max(1,Math.round(S.dur*60/S.dt)),f=cfactor()*S.arf/100,out=false;
-  var cum=[0],i,d;
+  var p=prof(),n=Math.max(1,Math.round(S.dur*60/S.dt)),f=adj(S.dur,S.ari),out=false,i,d;
+  if(S.pat==="hirds"){
+    d=depthAt(p,S.dur,S.ari);var total=d.v*f,tb=tanhBlocks(S.creg,n,S.dur,total);
+    var cumH=[0];for(i=0;i<n;i++)cumH.push(cumH[i]+tb.blocks[i]);
+    var pkH=tb.blocks.indexOf(Math.max.apply(null,tb.blocks));
+    return {n:n,blocks:tb.blocks,cum:cumH,pk:pkH,out:d.out,patOut:tb.out,total:cumH[n]};
+  }
+  var cum=[0];
   for(i=1;i<=n;i++){d=depthAt(p,i*S.dt/60,S.ari);out=out||d.out;cum.push(Math.max(cum[i-1],d.v*f))}
   var inc=[];for(i=1;i<=n;i++)inc.push(cum[i]-cum[i-1]);
   var ranked=inc.slice().sort(function(a,b){return b-a});
@@ -243,8 +307,8 @@ function stormChart(st){
 
 function curveChart(metric){
   var p=prof(),W=760,H=360,L=56,R=44,T=14,B=44,pw=W-L-R,ph=H-T-B;
-  var f=cfactor()*S.arf/100,val=function(D,v){return (metric==="int"?v/D:v)*f};
-  var all=[];p.aris.forEach(function(a,i){p.durs.forEach(function(D,j){all.push(val(D,p.depth[i][j]))})});
+  var val=function(D,v,a){return (metric==="int"?v/D:v)*adj(D,a)};
+  var all=[];p.aris.forEach(function(a,i){p.durs.forEach(function(D,j){all.push(val(D,p.depth[i][j],a))})});
   var lo=Math.min.apply(null,all),hi=Math.max.apply(null,all);
   function snap(v,up){var k=Math.pow(10,Math.floor(Math.log10(v))),c=[1,2,5,10].map(function(m){return m*k});var r=up?c.filter(function(x){return x>=v*.999})[0]:c.filter(function(x){return x<=v*1.001}).pop();return r}
   var y0=snap(lo,false),y1=snap(hi,true);
@@ -257,12 +321,12 @@ function curveChart(metric){
   var lastX=-99;
   p.durs.forEach(function(D){var x=X(D);s+='<line x1="'+x+'" x2="'+x+'" y1="'+T+'" y2="'+(T+ph)+'" stroke="var(--grid)"/>';
     if(x-lastX>26){s+='<text class="ax" x="'+x+'" y="'+(T+ph+16)+'" text-anchor="middle">'+(D<1?Math.round(D*60)+"m":+D.toFixed(1)+"h")+'</text>';lastX=x}});
-  var labelSet=[2,10,100,250],selY=null;p.aris.forEach(function(a,i){if(Math.abs(a-S.ari)<1e-6){var jj=p.durs.length-1;selY=Y(val(p.durs[jj],p.depth[i][jj]))}});
+  var labelSet=[2,10,100,250],selY=null;p.aris.forEach(function(a,i){if(Math.abs(a-S.ari)<1e-6){var jj=p.durs.length-1;selY=Y(val(p.durs[jj],p.depth[i][jj],a))}});
   p.aris.forEach(function(a,i){
     var t=i/(p.aris.length-1),sel=Math.abs(a-S.ari)<1e-6;
-    var pts=p.durs.map(function(D,j){return X(D).toFixed(1)+","+Y(val(D,p.depth[i][j])).toFixed(1)}).join(" ");
+    var pts=p.durs.map(function(D,j){return X(D).toFixed(1)+","+Y(val(D,p.depth[i][j],a)).toFixed(1)}).join(" ");
     s+='<polyline points="'+pts+'" fill="none" stroke="'+(sel?'var(--peak)':'var(--accent)')+'" stroke-opacity="'+(sel?1:(.25+.6*t).toFixed(2))+'" stroke-width="'+(sel?3:1.4)+'"/>';
-    var jy=Y(val(p.durs[p.durs.length-1],p.depth[i][p.durs.length-1]));if(sel||(labelSet.indexOf(a)>-1&&Math.abs(jy-selY)>12)){var j=p.durs.length-1;s+='<text x="'+(W-R+5)+'" y="'+(jy+4)+'" style="fill:'+(sel?'var(--peak)':'var(--muted)')+'">'+a+'y</text>'}
+    var jy=Y(val(p.durs[p.durs.length-1],p.depth[i][p.durs.length-1],a));if(sel||(labelSet.indexOf(a)>-1&&Math.abs(jy-selY)>12)){var j=p.durs.length-1;s+='<text x="'+(W-R+5)+'" y="'+(jy+4)+'" style="fill:'+(sel?'var(--peak)':'var(--muted)')+'">'+a+'y</text>'}
   });
   s+='<text x="'+(L+pw/2)+'" y="'+(H-6)+'" text-anchor="middle">Duration (log scale)</text>';
   s+='<text transform="translate(13 '+(T+ph/2)+') rotate(-90)" text-anchor="middle">'+(metric==="int"?"Mean intensity (mm/h, log)":"Rainfall depth (mm, log)")+'</text>';
@@ -276,9 +340,20 @@ function renderSetup(){
   $("ari").innerHTML=p.aris.map(function(a){return '<option value="'+a+'"'+(Math.abs(a-S.ari)<1e-6?' selected':'')+'>'+a+' years</option>'}).join("");
   if(p.aris.every(function(a){return Math.abs(a-S.ari)>1e-6})){S.ari=p.aris[Math.min(p.aris.length-1,p.aris.indexOf(100)>-1?p.aris.indexOf(100):0)]; $("ari").value=S.ari}
   $("aep").textContent="Annual exceedance probability about "+fmt(aepPct(S.ari),aepPct(S.ari)<1?2:1)+"%";
-  $("dur").value=S.dur; $("dt").value=S.dt; $("arf").value=S.arf; $("peak").value=S.peak; $("dT").value=S.dT; $("rate").value=S.rate;
+  $("dur").value=S.dur; $("dt").value=S.dt; $("peak").value=S.peak; $("dT").value=S.dT; $("area").value=S.area;
+  $("pat").value=S.pat; $("peakbox").hidden=S.pat!=="alt"; $("cregbox").hidden=S.pat!=="hirds";
+  $("creg").innerHTML=Object.keys(REGIONS).map(function(k){return '<option value="'+k+'"'+(k===S.creg?' selected':'')+'>'+REGIONS[k].n+'</option>'}).join("");
+  $("cregnote").textContent=S.dur<1||S.dur>72?"Patterns are fitted for 1 to 72 hour storms. Outside that range the nearest fitted pattern is used.":(S.dur>24?"For storms over 24 hours the report recommends the region specific pattern.":"For storms up to 24 hours the report says the national pattern is usually adequate.");
+  $("areg").innerHTML='<option value="auto">Report recommendation (equation 7, or equation 6 for all regions)</option>'+Object.keys(ARFP).map(function(k){return '<option value="'+k+'"'+(k===S.areg?' selected':'')+'>'+ARFP[k].n+' (equation 6)</option>'}).join("");
+  $("areg").value=S.areg;
+  $("scen").innerHTML='<option value="none">Current climate</option>'+Object.keys(RCPS).map(function(k){return '<option value="'+k+'">'+RCPS[k].n+'</option>'}).join("")+'<option value="custom">Custom warming</option>';
+  $("scen").value=S.scen;
+  $("per").innerHTML=PERIODS.map(function(l,i){return '<option value="'+i+'">'+l+'</option>'}).join("");$("per").value=S.per;
+  $("perbox").hidden=!(S.scen in RCPS); $("dTbox").hidden=S.scen!=="custom";
   $("peakv").textContent=Math.round(S.peak*100)+"% through the storm";
-  $("cf").textContent="×"+fmt(cfactor(),3);
+  var cc=ccFactor(S.dur,S.ari),ar=arfInfo(S.dur,S.ari);
+  $("ccnote").textContent=S.scen==="none"?"No climate adjustment. Choose a scenario to apply the report's augmentation factors (Table 6).":"Warming of "+fmt(warming(),2)+" °C relative to 1986 to 2005 gives +"+fmt(ccPct(S.dur,S.ari),1)+"% per °C for this event, so depths are multiplied by "+fmt(cc,3)+".";
+  $("arfnote").textContent=!(S.area>0)?"No areal reduction (point rainfall).":"ARF "+fmt(ar.v,3)+" (equation "+ar.eq+")."+(S.dur>24?" The report fitted the ARF model to storms of 24 hours or less.":"")+(S.area<=20&&S.areg==="auto"?" Under 20 km² the report does not use the return period term.":"");
   $("durchips").innerHTML=[1,2,6,12,24,48,72].map(function(h){return '<button class="chip" type="button" data-dur="'+h+'" aria-pressed="'+(S.dur===h)+'">'+h+' h</button>'}).join("");
   document.querySelectorAll("[data-peak]").forEach(function(b){b.setAttribute("aria-pressed",Math.abs(+b.dataset.peak-S.peak)<.02)});
 }
@@ -292,14 +367,16 @@ function tableCSV(st){
 function renderResults(){
   var p=prof(),st=designStorm(),dtH=S.dt/60;
   $("banner").innerHTML=(p.sample?'<div class="banner"><b>Example data.</b> This profile uses an illustrative formula, not HIRDS output. Load a real site table in the Data tab before using any numbers.</div>':"")+
+    (st.patOut?'<div class="banner" style="margin-top:8px">This storm duration is outside the 1 to 72 hour range the report fitted patterns for, so the nearest fitted pattern is used.</div>':"")+
     (st.out?'<div class="banner" style="margin-top:8px">Part of this storm falls outside the profile table. Values beyond the table are extrapolated in duration and held at the table limits for return period.</div>':"");
   var peakI=Math.max.apply(null,st.blocks)/dtH;
   $("stats").innerHTML=[
     [fmt(st.total,1)+" mm","Total depth, "+durLabel(S.dur)+", "+S.ari+"-year"],
     [fmt(st.total/S.dur,1)+" mm/h","Mean intensity"],
     [fmt(peakI,1)+" mm/h","Peak intensity over "+S.dt+" min"],
-    [fmt(st.pk*dtH+dtH/2,2)+" h","Time of peak step centre"]
-  ].map(function(r){return '<div class="stat"><b>'+r[0]+'</b><span>'+r[1]+'</span></div>'}).join("");
+    [fmt(st.pk*dtH+dtH/2,2)+" h","Time of peak step centre"],
+    ["ARF "+fmt(arfInfo(S.dur,S.ari).v,2)+", CC ×"+fmt(ccFactor(S.dur,S.ari),2),"Areal reduction and climate factors applied"]
+  ].map(function(r){return '<div class="stat"><b'+(r[0].length>12?' class="sm"':'')+'>'+r[0]+'</b><span>'+r[1]+'</span></div>'}).join("");
 
   // storm tab
   var csv=tableCSV(st),body="";
@@ -311,14 +388,14 @@ function renderResults(){
   $("copycsv").onclick=function(){copy(csv,$("csvbox"))};
 
   // curves tab
-  var f=cfactor()*S.arf/100,hd="",rows="";
+  var hd="",rows="";
   var dsel=depthAt(p,S.dur,S.ari);
-  p.aris.forEach(function(a,i){var d=depthAt(p,S.dur,a).v*f;
+  p.aris.forEach(function(a,i){var d=depthAt(p,S.dur,a).v*adj(S.dur,a);
     rows+='<tr'+(Math.abs(a-S.ari)<1e-6?' class="pk"':'')+'><td>'+a+' y</td><td>'+fmt(aepPct(a),aepPct(a)<1?2:1)+'%</td><td>'+fmt(d,1)+'</td><td>'+fmt(d/S.dur,1)+'</td></tr>'});
   $("tab-curves").innerHTML=
     '<div class="btns" style="margin-bottom:8px"><button class="chip" data-metric="depth" aria-pressed="'+(S.metric!=="int")+'" type="button">Depth</button><button class="chip" data-metric="int" aria-pressed="'+(S.metric==="int")+'" type="button">Intensity</button></div>'+
     curveChart(S.metric==="int"?"int":"depth")+
-    '<div class="legend"><span><i class="sw" style="background:var(--peak)"></i>Selected return period</span><span><i class="sw" style="background:var(--accent)"></i>Other return periods</span><span>Climate and area factors included</span></div>'+
+    '<div class="legend"><span><i class="sw" style="background:var(--peak)"></i>Selected return period</span><span><i class="sw" style="background:var(--accent)"></i>Other return periods</span><span>Climate and areal reduction factors included</span></div>'+
     '<h2 style="margin:16px 0 8px">All return periods at '+durLabel(S.dur)+'</h2><div class="scroll"><table><thead><tr><th>ARI</th><th>AEP</th><th>Depth (mm)</th><th>Intensity (mm/h)</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 
   // data tab
@@ -330,7 +407,7 @@ function renderResults(){
     '<div><div class="field"><label for="paste">Import a depth table (CSV or tab separated)</label><textarea id="paste" rows="5" placeholder="ARI,10m,20m,30m,1h,2h,6h,12h,24h,48h,72h\n2,12.1,16.5,19.4,26.3,35.2,..."></textarea></div>'+
     '<div class="btns"><button class="primary" id="doimport" type="button">Import pasted text</button><label class="chip" style="margin:0;border:1px solid var(--line);cursor:pointer;color:var(--ink)">Choose file<input id="file" type="file" accept=".csv,.txt,.tsv" hidden></label><button id="tp" type="button" aria-pressed="false" class="chip">Rows are durations</button></div>'+
     '<p class="hint">Header row gives durations (for example 10m, 1h, 24h or plain hours). First column gives return period in years, or AEP in percent if the header says AEP. Depths are in mm.</p></div></div>'+
-    '<h2 style="margin:16px 0 8px">Depth table (mm)</h2><div class="scroll ddf"><table><thead>'+head+'</thead><tbody>'+trs+'</tbody></table></div>';
+    '<div class="banner" style="margin:14px 0 0;background:var(--accent-soft);color:var(--ink)"><b>Getting depths for your site from HIRDS.</b> Open <a href="https://hirds.niwa.co.nz" target="_blank" rel="noopener" style="color:var(--accent)">hirds.niwa.co.nz</a>, pick your site on the map, open the rainfall depth table (current climate) and export or copy it, then paste it above. This app cannot call HIRDS itself. If you import a HIRDS table that already includes a climate scenario, set the scenario here to Current climate so it is not applied twice.</div><h2 style="margin:16px 0 8px">Depth table (mm)</h2><div class="scroll ddf"><table><thead>'+head+'</thead><tbody>'+trs+'</tbody></table></div>';
 
   $("pname").oninput=function(){p.name=this.value||"Untitled";persist();var o=$("profile").querySelector("option[value='"+p.id+"']");if(o)o.textContent=p.name};
   $("pnotes").oninput=function(){p.notes=this.value;persist()};
@@ -348,14 +425,18 @@ function parseDur(s){
 }
 function doImport(text,transpose){
   var rows=text.trim().split(/\r?\n/).map(function(l){return l.split(/[,\t;]/).map(function(c){return c.trim().replace(/^"|"$/g,"")})}).filter(function(r){return r.length>2});
-  if(rows.length<3){toast("Need a header row and at least two data rows");return}
   if(transpose)rows=rows[0].map(function(_,c){return rows.map(function(r){return r[c]})});
-  var head=rows[0],aep=/aep/i.test(head[0]),durs=head.slice(1).map(parseDur);
-  if(durs.some(function(d){return !(d>0)})){toast("Could not read the durations in the header row");return}
+  var h=-1;
+  for(var k=0;k<rows.length;k++){var ok=rows[k].slice(1).filter(function(c){return c!==""&&/^[\d.]+\s*[a-z]*$/i.test(c)&&parseDur(c)>0}).length;if(ok>=3){h=k;break}}
+  if(h<0||rows.length-h<3){toast("Could not find a header row of durations followed by at least two data rows");return}
+  rows=rows.slice(h);
+  var head=rows[0],aep=/aep|exceedance|%/i.test(head[0])&&!/ari|year|yr|recurrence|return/i.test(head[0]),cols=[];
+  head.forEach(function(c,i){if(i>0&&c!==""&&/^[\d.]+\s*[a-z]*$/i.test(c)&&parseDur(c)>0)cols.push(i)});
+  var durs=cols.map(function(i){return parseDur(head[i])});
   var aris=[],depth=[];
-  rows.slice(1).forEach(function(r){var a=parseFloat(r[0]);if(!(a>0))return;
+  rows.slice(1).forEach(function(r){var a=parseFloat(String(r[0]).replace(/[^\d.]/g,""));if(!(a>0))return;
     if(aep)a=a>=100?NaN:1/(-Math.log(1-a/100)); if(!(a>0))return;
-    var d=r.slice(1,1+durs.length).map(parseFloat);if(d.length===durs.length&&d.every(function(x){return x>0})){aris.push(+a.toFixed(2));depth.push(d)}});
+    var d=cols.map(function(i){return parseFloat(r[i])});if(d.every(function(x){return x>0})){aris.push(+a.toFixed(2));depth.push(d)}});
   if(aris.length<2){toast("No valid depth rows found");return}
   var oi=durs.map(function(_,i){return i}).sort(function(a,b){return durs[a]-durs[b]});
   var oa=aris.map(function(_,i){return i}).sort(function(a,b){return aris[a]-aris[b]});
@@ -376,9 +457,12 @@ $("profile").onchange=function(){S.pid=this.value;persist();renderSetup();render
 $("ari").onchange=function(){S.ari=parseFloat(this.value);persist();renderSetup();renderResults()};
 $("dt").onchange=function(){S.dt=parseInt(this.value,10);persist();renderResults()};
 $("peak").oninput=function(){S.peak=parseFloat(this.value);persist();renderSetup();renderResults()};
-["dur","arf","dT","rate"].forEach(function(id){var lim={dur:[.1,720],arf:[50,100],dT:[0,6],rate:[0,20]}[id];
-  $(id).addEventListener("input",function(){var v=parseFloat(this.value);if(v>=lim[0]&&v<=lim[1]){S[id]=v;persist();$("cf").textContent="×"+fmt(cfactor(),3);$("peakv").textContent=Math.round(S.peak*100)+"% through the storm";renderResults()}})});
-$("dur").addEventListener("change",renderSetup);
+["dur","area","dT"].forEach(function(id){var lim={dur:[.1,720],area:[0,100000],dT:[0,6]}[id];
+  $(id).addEventListener("input",function(){var v=parseFloat(this.value);if(v>=lim[0]&&v<=lim[1]){S[id]=v;persist();renderSetupNotes();renderResults()}})});
+["pat","creg","areg","scen"].forEach(function(id){$(id).onchange=function(){S[id]=this.value;persist();renderSetup();renderResults()}});
+$("per").onchange=function(){S.per=parseInt(this.value,10);persist();renderSetup();renderResults()};
+function renderSetupNotes(){var a=document.activeElement;renderSetup();if(a&&a.id&&$(a.id)&&a!==document.activeElement)$(a.id).focus()}
+$("dur").addEventListener("change",renderSetup);$("area").addEventListener("change",renderSetup);
 document.addEventListener("click",function(e){
   var b=e.target.closest("button");if(!b)return;
   if(b.dataset.dur){S.dur=+b.dataset.dur;persist();renderSetup();renderResults()}
