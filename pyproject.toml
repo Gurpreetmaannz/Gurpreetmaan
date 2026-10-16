@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catchtool"
+version = "0.1.0"
+description = "Delineate catchments from a DEM and compute DEM-only descriptors and time of concentration"
+requires-python = ">=3.10"
+dependencies = ["numpy", "numba", "rasterio", "shapely", "geopandas", "matplotlib"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+catchtool = "catchtool.cli:main"
+
+[tool.setuptools]
+packages = ["catchtool"]
+
+[tool.pytest.ini_options]
+pythonpath = ["tests"]
+testpaths = ["tests"]
