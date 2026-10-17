@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catchtool</title>
+<style>
+:root{
+  --bg:#f4f6f8; --panel:#ffffff; --panel2:#eef1f4; --line:#d9dee4; --text:#17202a; --muted:#5b6672;
+  --accent:#0b6bcb; --accent-ink:#ffffff; --warn-bg:#fff4dc; --warn-ink:#7a4b00; --err-bg:#fde8e8; --err-ink:#8a1f1f;
+  --map-bg:#1b2229; --shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111519; --panel:#1a2026; --panel2:#222a32; --line:#313b45; --text:#e8edf2; --muted:#9aa6b2;
+    --accent:#4c9aff; --accent-ink:#06121f; --warn-bg:#3a2e12; --warn-ink:#f2cf8a; --err-bg:#3d1b1b; --err-ink:#f5b5b5;
+    --map-bg:#0c1014; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111519; --panel:#1a2026; --panel2:#222a32; --line:#313b45; --text:#e8edf2; --muted:#9aa6b2;
+  --accent:#4c9aff; --accent-ink:#06121f; --warn-bg:#3a2e12; --warn-ink:#f2cf8a; --err-bg:#3d1b1b; --err-ink:#f5b5b5;
+  --map-bg:#0c1014; --shadow:none;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;margin:0;letter-spacing:.2px}
+header .sub{color:var(--muted);font-size:13px}
+header .sp{flex:1}
+button,select,input{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--panel2);padding:7px 12px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{padding:4px 9px;font-size:12.5px}
+.layout{display:grid;grid-template-columns:350px minmax(0,1fr);height:calc(100% - 53px)}
+aside{overflow:auto;padding:14px;border-right:1px solid var(--line);background:var(--panel)}
+main{overflow:auto;display:flex;flex-direction:column;min-width:0}
+.step{margin-bottom:18px}
+.step h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.step h2 .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:11px;letter-spacing:0}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--muted);cursor:pointer;background:var(--panel2)}
+.drop.over{border-color:var(--accent);color:var(--text)}
+.drop strong{color:var(--text)}
+.drop .name{margin-top:6px;color:var(--text);font-weight:600;word-break:break-all}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px;display:none}
+.bar>i{display:block;height:100%;width:0;background:var(--accent)}
+.hint{color:var(--muted);font-size:12.5px;margin:6px 0 0}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.row input{flex:1}
+.row .btn{flex:none}
+label.f{display:block;margin:10px 0 0;font-size:13px}
+label.f span{display:block;color:var(--muted);font-size:12.5px;margin-bottom:3px}
+input[type=text],input[type=number],select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.outlets{list-style:none;margin:8px 0 0;padding:0}
+.outlets li{display:flex;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)}
+.outlets .dot{width:12px;height:12px;border-radius:50%;flex:none;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.outlets input{padding:4px 7px;flex:1}
+.outlets .xy{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.outlets button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+.outlets button:hover{color:var(--err-ink)}
+.mapwrap{position:relative;background:var(--map-bg);flex:none;height:min(54vh,600px);min-height:300px}
+canvas#map{width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#9fb0bf;text-align:center;padding:20px;pointer-events:none}
+.tools{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px}
+.tools button{width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(20,26,32,.8);color:#fff;font-size:18px;cursor:pointer}
+.layers{position:absolute;top:10px;left:10px;background:rgba(20,26,32,.82);color:#fff;border-radius:10px;padding:8px 10px;font-size:12.5px;display:flex;flex-direction:column;gap:4px}
+.layers label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.readout{position:absolute;left:10px;bottom:10px;background:rgba(20,26,32,.82);color:#dfe7ee;border-radius:8px;padding:4px 9px;font-size:12px;font-variant-numeric:tabular-nums}
+.legend{position:absolute;right:10px;bottom:10px;background:rgba(20,26,32,.82);color:#dfe7ee;border-radius:8px;padding:6px 9px;font-size:11.5px;width:150px}
+.legend i{display:block;height:8px;border-radius:4px;margin-bottom:3px;background:linear-gradient(90deg,#2f5d50,#6b8f5e,#c9c58a,#b79a76,#f2efe9)}
+.legend div{display:flex;justify-content:space-between}
+.results{padding:16px 18px 40px}
+.results h2{margin:0 0 10px;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 12px;cursor:pointer;display:flex;gap:7px;align-items:center}
+.chip.on{border-color:var(--accent);background:var(--panel2);font-weight:600}
+.chip .dot{width:10px;height:10px;border-radius:50%}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow)}
+.kpi b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--muted);font-size:12px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+table{border-collapse:collapse;width:100%}
+td{padding:4px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td:last-child{text-align:right;font-weight:600}
+tr:last-child td{border-bottom:0}
+.tcrow{display:grid;grid-template-columns:140px 1fr 60px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.tcrow .track{height:10px;background:var(--panel2);border-radius:5px;overflow:hidden}
+.tcrow .fill{height:100%;background:var(--muted);border-radius:5px}
+.tcrow.sel .fill{background:var(--accent)}
+.tcrow.sel{font-weight:600}
+.tcrow .v{text-align:right;font-variant-numeric:tabular-nums}
+canvas#prof{width:100%;height:170px;display:block}
+.note{border-radius:10px;padding:8px 11px;margin:8px 0;font-size:13px}
+.note.warn{background:var(--warn-bg);color:var(--warn-ink)}
+.note.err{background:var(--err-bg);color:var(--err-ink)}
+.small{font-size:12.5px;color:var(--muted)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+@media (max-width:900px){.layout{grid-template-columns:1fr;height:auto}aside{border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>catchtool</h1>
+  <span class="sub">Catchments, flow paths and time of concentration from a DEM</span>
+  <span class="sp"></span>
+  <button class="btn small" id="theme" title="Switch between light and dark">Theme</button>
+</header>
+
+<div class="layout">
+<aside>
+  <section class="step">
+    <h2><span class="n">1</span>Load your DEM</h2>
+    <div class="drop" id="drop">
+      <div><strong>Drop a GeoTIFF here</strong> or click to choose</div>
+      <div class="hint" style="margin-top:4px">Projected CRS in metres, for example NZTM</div>
+      <div class="name" id="dname"></div>
+      <div class="bar" id="ubar"><i></i></div>
+    </div>
+    <input type="file" id="file" accept=".tif,.tiff,.TIF,.TIFF" hidden>
+    <p class="hint">No DEM to hand? <a href="#" id="demo">Try the demo valley</a>.</p>
+  </section>
+
+  <section class="step">
+    <h2><span class="n">2</span>Place outlets</h2>
+    <p class="hint" style="margin-top:0">Click the map where each culvert is. Outlets snap to the nearest stream cell when you run.</p>
+    <ul class="outlets" id="olist"></ul>
+    <div class="row" style="margin-top:8px">
+      <input type="number" id="ax" placeholder="Easting X" step="any">
+      <input type="number" id="ay" placeholder="Northing Y" step="any">
+      <button class="btn small" id="aadd">Add</button>
+    </div>
+    <div class="row" style="margin-top:8px"><button class="btn small" id="clear">Clear all</button></div>
+  </section>
+
+  <section class="step">
+    <h2><span class="n">3</span>Settings</h2>
+    <label class="f"><span>Snap distance (m): how far an outlet may move to reach a stream</span>
+      <input type="number" id="snap" value="100" min="0" step="10"></label>
+    <label class="f"><span>Stream threshold (km²): smallest contributing area counted as a stream</span>
+      <input type="number" id="thr" value="0.25" min="0.0001" step="0.05"></label>
+    <label class="f"><span>Slope used in Tc formulas</span>
+      <select id="slope">
+        <option value="overall">Overall (drop over length)</option>
+        <option value="1085">10-85 slope</option>
+        <option value="equal_area">Equal-area slope</option>
+      </select></label>
+    <label class="f"><span>Headline Tc method</span><select id="tcm"></select></label>
+    <p class="hint" id="tcdoc"></p>
+  </section>
+
+  <button class="btn primary" id="run" style="width:100%;padding:10px" disabled>Delineate catchments</button>
+  <p class="hint" id="status"></p>
+</aside>
+
+<main>
+  <div class="mapwrap" id="mapwrap">
+    <canvas id="map"></canvas>
+    <div class="empty" id="empty"><div><div style="font-size:18px;color:#cfd9e3;margin-bottom:6px">No DEM loaded</div>Load a GeoTIFF on the left, or try the demo valley.</div></div>
+    <div class="layers" id="layers" hidden>
+      <label><input type="checkbox" id="lyC" checked>Catchments</label>
+      <label><input type="checkbox" id="lyS" checked>Streams</label>
+      <label><input type="checkbox" id="lyL" checked>Longest flow path</label>
+    </div>
+    <div class="tools" id="tools" hidden>
+      <button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">&minus;</button><button id="zfit" title="Fit to window" style="font-size:13px">Fit</button>
+    </div>
+    <div class="readout" id="readout" hidden></div>
+    <div class="legend" id="legend" hidden><i></i><div><span id="emin"></span><span id="emax"></span></div></div>
+  </div>
+  <div class="results" id="results" hidden></div>
+</main>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const PALETTE = ["#3fae55","#f0902a","#b05cc6","#1fa8b5","#e5484d","#4f7cf0","#c8a21a","#7a8a99"];
+const S = {cfg:null, view:null, img:null, outlets:[], counter:0, res:null, sel:0, k:1, ox:0, oy:0, uploading:false, running:false};
+
+/* ---------- theme ---------- */
+$("#theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
+  draw(); if (S.res) drawProfile();
+};
+
+/* ---------- helpers ---------- */
+const fmt = (v, d=2) => (v === null || v === undefined || !isFinite(v)) ? "n/a" : Number(v).toLocaleString("en-NZ",{minimumFractionDigits:d,maximumFractionDigits:d});
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const colour = i => PALETTE[i % PALETTE.length];
+async function api(path, opts){
+  const r = await fetch(path, opts); const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Request failed");
+  return j;
+}
+function setStatus(msg, bad){ const e=$("#status"); e.textContent = msg||""; e.style.color = bad ? "var(--err-ink)" : "var(--muted)"; }
+
+/* ---------- loading a DEM ---------- */
+function upload(file){
+  if (S.uploading) return;
+  S.uploading = true; setStatus("");
+  $("#dname").textContent = file.name;
+  const bar = $("#ubar"), fill = bar.firstElementChild; bar.style.display = "block"; fill.style.width = "0";
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/upload?name=" + encodeURIComponent(file.name));
+  xhr.upload.onprogress = e => { if (e.lengthComputable) fill.style.width = (100*e.loaded/e.total*0.8) + "%"; };
+  xhr.upload.onload = () => { fill.style.width = "85%"; setStatus("Reading DEM and routing flow. This can take a minute for large files."); };
+  xhr.onload = () => {
+    S.uploading = false; bar.style.display = "none";
+    let j = {}; try { j = JSON.parse(xhr.responseText); } catch(e){}
+    if (xhr.status !== 200) { $("#dname").textContent = ""; setStatus(j.error || "Upload failed", true); return; }
+    onLoaded(j);
+  };
+  xhr.onerror = () => { S.uploading = false; bar.style.display = "none"; setStatus("Upload failed. Is catchtool still running in its terminal window?", true); };
+  xhr.send(file);
+}
+async function demo(){
+  setStatus("Building demo DEM...");
+  try { onLoaded(await api("/api/demo", {method:"POST"})); } catch(e){ setStatus(e.message, true); }
+}
+function onLoaded(v){
+  S.view = v; S.outlets = []; S.res = null; S.counter = 0;
+  $("#dname").textContent = v.name; setStatus(`Loaded ${v.cols.toLocaleString()} x ${v.rows.toLocaleString()} cells at ${fmt(v.cell,1)} m. Click the map to place outlets.`);
+  $("#emin").textContent = fmt(v.elev_min,0) + " m"; $("#emax").textContent = fmt(v.elev_max,0) + " m";
+  const img = new Image();
+  img.onload = () => { S.img = img; $("#empty").hidden = true; for (const id of ["layers","tools","legend"]) $("#"+id).hidden = false; fit(); renderOutlets(); renderResults(); draw(); };
+  img.src = "/api/preview.png?" + Date.now();
+}
+
+/* ---------- map view ---------- */
+const cv = $("#map"), ctx = cv.getContext("2d");
+function size(){
+  const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1;
+  cv.width = Math.round(r.width*d); cv.height = Math.round(r.height*d);
+}
+function fit(){
+  if (!S.view) return; size();
+  const d = devicePixelRatio||1, W = cv.width/d, H = cv.height/d, v = S.view;
+  S.k = Math.min(W/v.img_w, H/v.img_h) * 0.96;
+  S.ox = (W - v.img_w*S.k)/2; S.oy = (H - v.img_h*S.k)/2; draw();
+}
+const w2s = (x,y) => { const v=S.view; return [S.ox + (x-v.x0)/(v.x1-v.x0)*v.img_w*S.k, S.oy + (v.y1-y)/(v.y1-v.y0)*v.img_h*S.k]; };
+const s2w = (sx,sy) => { const v=S.view; return [v.x0 + (sx-S.ox)/(v.img_w*S.k)*(v.x1-v.x0), v.y1 - (sy-S.oy)/(v.img_h*S.k)*(v.y1-v.y0)]; };
+
+function draw(){
+  if (!S.view || !S.img) return;
+  const d = devicePixelRatio||1, W = cv.width/d, H = cv.height/d, v = S.view;
+  ctx.setTransform(d,0,0,d,0,0); ctx.clearRect(0,0,W,H);
+  ctx.imageSmoothingEnabled = S.k < 3;
+  ctx.drawImage(S.img, S.ox, S.oy, v.img_w*S.k, v.img_h*S.k);
+  const res = S.res;
+  if (res) {
+    res.features.forEach((f,i) => {
+      const c = colour(i), on = i === S.sel;
+      if ($("#lyC").checked) {
+        ctx.beginPath();
+        for (const poly of f.polygon) for (const ring of poly) { ring.forEach(([x,y],j)=>{const [sx,sy]=w2s(x,y); j?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);}); ctx.closePath(); }
+        ctx.globalAlpha = on ? .38 : .22; ctx.fillStyle = c; ctx.fill("evenodd"); ctx.globalAlpha = 1;
+        ctx.lineWidth = on ? 3 : 2; ctx.strokeStyle = c; ctx.stroke();
+      }
+      if ($("#lyS").checked) {
+        ctx.beginPath(); ctx.strokeStyle = "#5cc8ff"; ctx.lineWidth = 1.2;
+        for (const ln of f.streams) ln.forEach(([x,y],j)=>{const [sx,sy]=w2s(x,y); j?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+        ctx.stroke();
+      }
+      if ($("#lyL").checked) {
+        ctx.beginPath(); ctx.setLineDash([7,5]); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.4;
+        f.lfp.forEach(([x,y],j)=>{const [sx,sy]=w2s(x,y); j?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy);});
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+    });
+  }
+  // outlets (requested positions); after a run, show the snapped ones too
+  S.outlets.forEach((o,i) => pin(o.x,o.y,colour(i),String(i+1)));
+  if (res) res.features.forEach((f,i) => { const idx = S.outlets.findIndex(o=>o.id===f.id); ring(f.outlet[0], f.outlet[1], colour(idx<0?i:idx)); });
+}
+function pin(x,y,c,label){
+  const [sx,sy] = w2s(x,y);
+  ctx.beginPath(); ctx.arc(sx,sy,10,0,7); ctx.fillStyle = c; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label,sx,sy+.5);
+}
+function ring(x,y,c){
+  const [sx,sy] = w2s(x,y);
+  ctx.beginPath(); ctx.arc(sx,sy,5,0,7); ctx.fillStyle = "#000"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+}
+
+let drag = null;
+cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); drag = {x:e.clientX,y:e.clientY,ox:S.ox,oy:S.oy,moved:false}; });
+cv.addEventListener("pointermove", e => {
+  const r = cv.getBoundingClientRect();
+  if (S.view) {
+    const [wx,wy] = s2w(e.clientX-r.left, e.clientY-r.top), ro = $("#readout");
+    ro.hidden = false; ro.textContent = `E ${wx.toFixed(1)}   N ${wy.toFixed(1)}`;
+  }
+  if (!drag) return;
+  const dx = e.clientX-drag.x, dy = e.clientY-drag.y;
+  if (Math.hypot(dx,dy) > 4) drag.moved = true;
+  if (drag.moved) { S.ox = drag.ox+dx; S.oy = drag.oy+dy; draw(); }
+});
+cv.addEventListener("pointerup", e => {
+  if (drag && !drag.moved && S.view) {
+    const r = cv.getBoundingClientRect(), [x,y] = s2w(e.clientX-r.left, e.clientY-r.top), v = S.view;
+    if (x>=v.x0 && x<=v.x1 && y>=v.y0 && y<=v.y1) addOutlet(x,y);
+  }
+  drag = null;
+});
+cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.deltaY<0?1.25:0.8, e.offsetX, e.offsetY); }, {passive:false});
+function zoomAt(f,sx,sy){ if(!S.view) return; const [wx,wy]=s2w(sx,sy); S.k*=f; const v=S.view;
+  S.ox = sx - (wx-v.x0)/(v.x1-v.x0)*v.img_w*S.k; S.oy = sy - (v.y1-wy)/(v.y1-v.y0)*v.img_h*S.k; draw(); }
+$("#zin").onclick = () => zoomAt(1.5, cv.clientWidth/2, cv.clientHeight/2);
+$("#zout").onclick = () => zoomAt(1/1.5, cv.clientWidth/2, cv.clientHeight/2);
+$("#zfit").onclick = fit;
+for (const id of ["lyC","lyS","lyL"]) $("#"+id).onchange = draw;
+addEventListener("resize", () => { fit(); if (S.res) drawProfile(); });
+
+/* ---------- outlets ---------- */
+function addOutlet(x,y){
+  S.counter++; S.outlets.push({id:"Outlet_"+S.counter, x:+x.toFixed(2), y:+y.toFixed(2)}); renderOutlets(); draw();
+}
+function renderOutlets(){
+  const ul = $("#olist"); ul.innerHTML = "";
+  S.outlets.forEach((o,i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="dot" style="background:${colour(i)}"></span><input type="text" value="${esc(o.id)}" aria-label="Outlet name"><span class="xy">${o.x.toFixed(0)}, ${o.y.toFixed(0)}</span><button title="Remove">&times;</button>`;
+    li.querySelector("input").oninput = e => { o.id = e.target.value.trim() || ("Outlet_"+(i+1)); };
+    li.querySelector("button").onclick = () => { S.outlets.splice(i,1); renderOutlets(); draw(); };
+    ul.appendChild(li);
+  });
+  $("#run").disabled = !(S.view && S.outlets.length) || S.running;
+}
+$("#aadd").onclick = () => {
+  const x = parseFloat($("#ax").value), y = parseFloat($("#ay").value), v = S.view;
+  if (!v) return setStatus("Load a DEM first.", true);
+  if (!isFinite(x) || !isFinite(y)) return setStatus("Enter both coordinates, in the DEM's CRS.", true);
+  if (x<v.x0||x>v.x1||y<v.y0||y>v.y1) return setStatus(`That point is outside the DEM (E ${v.x0.toFixed(0)} to ${v.x1.toFixed(0)}, N ${v.y0.toFixed(0)} to ${v.y1.toFixed(0)}).`, true);
+  addOutlet(x,y); $("#ax").value = $("#ay").value = ""; setStatus("");
+};
+$("#clear").onclick = () => { S.outlets = []; S.res = null; renderOutlets(); renderResults(); draw(); };
+
+/* ---------- run ---------- */
+$("#run").onclick = async () => {
+  S.running = true; $("#run").disabled = true; $("#run").innerHTML = '<span class="spin"></span>Working...'; setStatus("");
+  try {
+    const out = await api("/api/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({
+      outlets: S.outlets, snap_distance: +$("#snap").value, stream_km2: +$("#thr").value,
+      slope_method: $("#slope").value, tc_method: $("#tcm").value })});
+    S.res = out; S.sel = 0; renderResults(); draw();
+    setStatus(out.rows.length ? `Done. ${out.rows.length} catchment${out.rows.length>1?"s":""} delineated. Scroll down for the results.` : "No catchments could be delineated.", !out.rows.length);
+  } catch(e){ setStatus(e.message, true); }
+  S.running = false; $("#run").textContent = "Delineate catchments"; renderOutlets();
+};
+
+/* ---------- results ---------- */
+const SLOPE_FIELD = {overall:"lfp_slope_overall_mm","1085":"lfp_slope_1085_mm",equal_area:"lfp_slope_equal_area_mm"};
+function renderResults(){
+  const box = $("#results"), res = S.res;
+  if (!res) { box.hidden = true; return; }
+  box.hidden = false;
+  let h = `<h2>Results</h2>`;
+  for (const e of res.errors) h += `<div class="note err"><b>${esc(e.id)}:</b> ${esc(e.message)}</div>`;
+  if (!res.rows.length) { box.innerHTML = h; return; }
+  h += `<div class="chips">` + res.rows.map((r,i)=>`<button class="chip ${i===S.sel?"on":""}" data-i="${i}"><span class="dot" style="background:${colour(i)}"></span>${esc(r.id)}</button>`).join("") + `</div><div id="detail"></div>`;
+  h += `<div class="actions"><a class="btn primary" href="/api/download.zip" download>Download results (zip)</a><button class="btn" id="copy">Copy table for Excel</button></div>
+        <p class="small">The zip holds metrics.csv, metrics.json, catchments.gpkg (open in QGIS or ArcGIS Pro) and overview.png. Slopes are in m/m, lengths and areas in km, Tc and Tlag in hours. Tlag is taken as 0.6 Tc. Curve number is not calculated because it needs land cover and soil data.</p>`;
+  box.innerHTML = h;
+  box.querySelectorAll(".chip").forEach(b => b.onclick = () => { S.sel = +b.dataset.i; renderResults(); draw(); });
+  $("#copy").onclick = copyTable;
+  detail(); drawProfile();
+}
+function detail(){
+  const r = S.res.rows[S.sel], sm = r.slope_method, slope = r[SLOPE_FIELD[sm]];
+  const tcs = S.res.rows.length ? Object.keys(r).filter(k=>/^tc_.+_hr$/.test(k) && k!=="tc_hr").map(k=>[k.slice(3,-3), r[k]]) : [];
+  const mx = Math.max(...tcs.map(t=>t[1]||0), 1e-9);
+  const nice = s => s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()).replace("Mcdermott","McDermott");
+  let h = "";
+  if (r.warnings) h += r.warnings.split("; ").map(w=>`<div class="note warn">${esc(w)}</div>`).join("");
+  if (r.snap_distance_m > 0.5) h += `<div class="small" style="margin-bottom:8px">Outlet moved ${fmt(r.snap_distance_m,0)} m to reach the nearest stream cell.</div>`;
+  h += `<div class="kpis">
+    <div class="kpi"><b>${fmt(r.area_km2)}</b><span>Area (km²)</span></div>
+    <div class="kpi"><b>${fmt(r.lfp_km)}</b><span>Longest flow path (km)</span></div>
+    <div class="kpi"><b>${fmt(slope,3)}</b><span>Flow path slope (m/m)</span></div>
+    <div class="kpi"><b>${fmt(r.tc_hr)}</b><span>Tc, ${esc(nice(r.tc_method))} (hr)</span></div>
+    <div class="kpi"><b>${fmt(r.tlag_hr)}</b><span>Tlag = 0.6 Tc (hr)</span></div></div>`;
+  h += `<div class="cols">
+    <div class="card"><h3>Time of concentration by method</h3>` +
+    tcs.map(([k,v])=>`<div class="tcrow ${k===r.tc_method?"sel":""}"><span>${esc(nice(k))}</span><span class="track"><span class="fill" style="display:block;width:${v?Math.max(2,v/mx*100):0}%"></span></span><span class="v">${fmt(v)} h</span></div>`).join("") +
+    `<p class="small" style="margin:8px 0 0">Each formula was calibrated on particular regions and catchment sizes, so the spread is worth reading before picking one.</p></div>
+    <div class="card"><h3>Elevation profile of longest flow path</h3><canvas id="prof"></canvas></div>
+    <div class="card"><h3>Catchment</h3><table>
+      <tr><td>Perimeter (km)</td><td>${fmt(r.perimeter_km)}</td></tr>
+      <tr><td>Elevation min / mean / max (m)</td><td>${fmt(r.elev_min_m,0)} / ${fmt(r.elev_mean_m,0)} / ${fmt(r.elev_max_m,0)}</td></tr>
+      <tr><td>Outlet elevation (m)</td><td>${fmt(r.outlet_elev_m,1)}</td></tr>
+      <tr><td>Relief (m)</td><td>${fmt(r.relief_m,0)}</td></tr>
+      <tr><td>Mean catchment slope (m/m)</td><td>${fmt(r.mean_slope_mm,3)}</td></tr>
+      <tr><td>Drainage density (km/km²)</td><td>${fmt(r.drainage_density_km_per_km2)}</td></tr></table></div>
+    <div class="card"><h3>Flow path and shape</h3><table>
+      <tr><td>Elevation drop along path (m)</td><td>${fmt(r.lfp_drop_m,1)}</td></tr>
+      <tr><td>Slope: overall / 10-85 / equal-area</td><td>${fmt(r.lfp_slope_overall_mm,3)} / ${fmt(r.lfp_slope_1085_mm,3)} / ${fmt(r.lfp_slope_equal_area_mm,3)}</td></tr>
+      <tr><td>Outlet to centroid along path, Lc (km)</td><td>${fmt(r.lc_km)}</td></tr>
+      <tr><td>Form factor</td><td>${fmt(r.form_factor)}</td></tr>
+      <tr><td>Elongation ratio</td><td>${fmt(r.elongation_ratio)}</td></tr>
+      <tr><td>Compactness (Gravelius)</td><td>${fmt(r.compactness_gravelius)}</td></tr>
+      <tr><td>Circularity ratio</td><td>${fmt(r.circularity_ratio)}</td></tr></table></div>
+  </div>`;
+  $("#detail").innerHTML = h;
+}
+function drawProfile(){
+  const c = $("#prof"); if (!c || !S.res) return;
+  const f = S.res.features[S.sel], d = devicePixelRatio||1, r = c.getBoundingClientRect();
+  c.width = r.width*d; c.height = r.height*d; const g = c.getContext("2d"); g.setTransform(d,0,0,d,0,0);
+  const W = r.width, H = r.height, L = 38, B = 22, T = 8, R = 8;
+  const css = getComputedStyle(document.documentElement), ink = css.getPropertyValue("--muted").trim(), line = css.getPropertyValue("--line").trim();
+  const xs = f.profile.d, zs = f.profile.z, xm = xs[xs.length-1] || 1;
+  let zmin = Math.min(...zs), zmax = Math.max(...zs); if (zmax-zmin < 1) zmax = zmin+1;
+  const X = x => L + x/xm*(W-L-R), Y = z => T + (1-(z-zmin)/(zmax-zmin))*(H-T-B);
+  g.strokeStyle = line; g.fillStyle = ink; g.font = "11px system-ui"; g.lineWidth = 1;
+  for (let i=0;i<=3;i++){ const z = zmin+(zmax-zmin)*i/3, y = Y(z); g.beginPath(); g.moveTo(L,y); g.lineTo(W-R,y); g.stroke(); g.textAlign="right"; g.fillText(z.toFixed(0), L-5, y+3); }
+  for (let i=0;i<=4;i++){ const x = xm*i/4; g.textAlign = i===0?"left":(i===4?"right":"center"); g.fillText((x/1000).toFixed(2)+" km", i===0?L:(i===4?W-R:X(x)), H-6); }
+  g.beginPath(); xs.forEach((x,i)=> i?g.lineTo(X(x),Y(zs[i])):g.moveTo(X(x),Y(zs[i])));
+  g.strokeStyle = colour(S.sel); g.lineWidth = 2.2; g.stroke();
+  g.lineTo(X(xm),Y(zmin)); g.lineTo(X(0),Y(zmin)); g.closePath(); g.globalAlpha=.15; g.fillStyle = colour(S.sel); g.fill(); g.globalAlpha=1;
+}
+function copyTable(){
+  const rows = S.res.rows, keys = Object.keys(rows[0]).filter(k=>!["warnings"].includes(k));
+  const tsv = [keys.join("\t")].concat(rows.map(r=>keys.map(k=>r[k]===null?"":r[k]).join("\t"))).join("\n");
+  navigator.clipboard.writeText(tsv).then(()=>{ $("#copy").textContent = "Copied"; setTimeout(()=>$("#copy").textContent="Copy table for Excel",1500); },
+    ()=>setStatus("Copy was blocked by the browser. Use the zip download instead.", true));
+}
+
+/* ---------- wiring ---------- */
+const drop = $("#drop"), fileIn = $("#file");
+drop.onclick = () => fileIn.click();
+fileIn.onchange = () => { if (fileIn.files[0]) upload(fileIn.files[0]); fileIn.value = ""; };
+["dragenter","dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
+$("#demo").onclick = e => { e.preventDefault(); demo(); };
+$("#tcm").onchange = () => { const m = S.cfg.tc_methods.find(m=>m.id===$("#tcm").value); $("#tcdoc").textContent = m ? m.doc : ""; };
+
+(async function init(){
+  S.cfg = await api("/api/config");
+  const sel = $("#tcm");
+  S.cfg.tc_methods.forEach(m => { const o = document.createElement("option"); o.value = m.id; o.textContent = m.id.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()).replace("Mcdermott","McDermott"); sel.appendChild(o); });
+  sel.value = "bransby_williams"; sel.onchange();
+  size(); renderOutlets();
+  if (S.cfg.loaded) onLoaded(S.cfg.loaded);
+})();
+</script>
+</body>
+</html>

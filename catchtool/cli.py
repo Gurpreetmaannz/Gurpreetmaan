@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import sys
 from pathlib import Path
 
 import geopandas as gpd
-import numpy as np
-from shapely.geometry import LineString, Point
-
 from . import tc as tcmod
-from .hydro import delineate, load_terrain, snap_to_flow, trace_longest_path
-from .metrics import SLOPE_METHODS, compute_metrics, polygon_of, stream_lines
+from .hydro import load_terrain
+from .metrics import SLOPE_METHODS
+from .pipeline import run_outlets, slope_key, write_outputs
 
 
 def read_outlets(args, crs) -> list[tuple[str, float, float]]:
@@ -63,71 +60,21 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-
     print("Conditioning DEM and computing flow directions...", flush=True)
     terrain = load_terrain(args.dem)
-    min_cells = args.stream_threshold_km2 * 1e6 / terrain.cell_area
     outlets = read_outlets(args, terrain.crs)
-
-    rows, polys, lfps, strs = [], [], [], []
-    plot_items = []
-    for oid, x, y in outlets:
-        r, c, on_stream = snap_to_flow(terrain, x, y, args.snap_distance, min_cells)
-        sx, sy = terrain.transform @ (c + 0.5, r + 0.5)
-        warn = []
-        if not on_stream:
-            warn.append(f"no cell above the {args.stream_threshold_km2} km2 stream threshold within the snap radius")
-        catch = delineate(terrain, r, c)
-        if catch.touches_edge:
-            warn.append("catchment touches the DEM edge or no-data, so it may be truncated")
-        lfp_rc = trace_longest_path(terrain, catch)
-        poly = polygon_of(terrain, catch.mask)
-        streams = stream_lines(terrain, catch.mask, min_cells)
-        m = compute_metrics(terrain, catch, lfp_rc, poly, streams, args.slope_method, args.tc_method)
-        prof = m.pop("_profile")
-        snap_dist = float(np.hypot(sx - x, sy - y))
-        m.update(id=oid, outlet_x=sx, outlet_y=sy, snap_distance_m=snap_dist, warnings="; ".join(warn))
-        rows.append(m)
-        polys.append(poly)
-        pts = [terrain.transform @ (cc + 0.5, rr + 0.5) for rr, cc in lfp_rc]
-        lfps.append(LineString(pts))
-        strs.append(streams)
-        plot_items.append((oid, poly, lfps[-1], streams, prof, (sx, sy)))
-        for w in warn:
-            print(f"  warning [{oid}]: {w}", file=sys.stderr)
-
-    first = ["id", "area_km2", "lfp_km", "lfp_slope_" + {"overall": "overall", "1085": "1085", "equal_area": "equal_area"}[args.slope_method] + "_mm", "tc_method", "tc_hr", "tlag_hr"]
-    keys = first + [k for k in rows[0] if k not in first]
-    with open(out / "metrics.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        w.writerows({k: r.get(k) for k in keys} for r in rows)
-    (out / "metrics.json").write_text(json.dumps(rows, indent=2, default=float))
-
-    crs = terrain.crs
-    gdf = gpd.GeoDataFrame(rows, geometry=polys, crs=crs)
-    gdf.to_file(out / "catchments.gpkg", layer="catchments", driver="GPKG")
-    gpd.GeoDataFrame({"id": [r["id"] for r in rows]}, geometry=lfps, crs=crs).to_file(
-        out / "catchments.gpkg", layer="longest_flow_path", driver="GPKG"
+    res = run_outlets(
+        terrain,
+        outlets,
+        args.snap_distance,
+        args.stream_threshold_km2,
+        args.slope_method,
+        args.tc_method,
+        strict=True,
+        log=lambda m: print("  " + m, file=sys.stderr),
     )
-    gpd.GeoDataFrame(
-        {"id": [r["id"] for r in rows]},
-        geometry=[Point(r["outlet_x"], r["outlet_y"]) for r in rows],
-        crs=crs,
-    ).to_file(out / "catchments.gpkg", layer="outlets", driver="GPKG")
-    sel = [(r["id"], s) for r, s in zip(rows, strs) if s is not None]
-    if sel:
-        gpd.GeoDataFrame({"id": [i for i, _ in sel]}, geometry=[s for _, s in sel], crs=crs).to_file(
-            out / "catchments.gpkg", layer="streams", driver="GPKG"
-        )
-
-    if args.plot:
-        from .plot import overview
-
-        overview(terrain, plot_items, out / "overview.png")
-
-    print_summary(rows)
+    write_outputs(terrain, res, out, plot=args.plot)
+    print_summary(res.rows)
     print(f"\nWrote {out}/metrics.csv, metrics.json, catchments.gpkg" + (", overview.png" if args.plot else ""))
     return 0
 
@@ -137,7 +84,7 @@ def print_summary(rows) -> None:
     hdr = f"{'id':<14}{'A km2':>8}{'LFP km':>8}{'S':>8}{'Tc':>7}{'Tlag':>7}  method"
     print(hdr)
     for r in rows:
-        s = r["lfp_slope_" + {"overall": "overall", "1085": "1085", "equal_area": "equal_area"}[r["slope_method"]] + "_mm"]
+        s = r[slope_key(r["slope_method"])]
         print(f"{r['id']:<14}{r['area_km2']:>8.2f}{r['lfp_km']:>8.2f}{s:>8.3f}{r['tc_hr']:>7.2f}{r['tlag_hr']:>7.2f}  {r['tc_method']}")
     print("\nTc by method (hr):")
     names = sorted(tcmod.METHODS)

@@ -14,9 +14,13 @@ test = ["pytest"]
 
 [project.scripts]
 catchtool = "catchtool.cli:main"
+catchtool-gui = "catchtool.gui:main"
 
 [tool.setuptools]
 packages = ["catchtool"]
+
+[tool.setuptools.package-data]
+catchtool = ["static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests"]

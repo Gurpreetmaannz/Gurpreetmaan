@@ -3,7 +3,18 @@
 Delineate catchments from a DEM and compute every descriptor that follows from the DEM alone,
 including time of concentration (Tc).
 
-## Install and run
+## Easiest: the browser app
+
+1. Install Miniconda once (https://docs.conda.io/en/latest/miniconda.html).
+2. **Windows:** double-click `Start catchtool.bat`. **Mac or Linux:** run `./start_catchtool.sh`.
+   The first launch installs what it needs (a few minutes). Later launches take seconds.
+3. Your browser opens at http://127.0.0.1:8765. Drop in a DEM, click where each culvert is, press
+   **Delineate catchments**, then download the results.
+
+It runs only on your computer. Nothing is uploaded anywhere. Close the black terminal window to stop it.
+Already installed? `catchtool-gui` does the same thing.
+
+## Command line (batch work)
 
 ```bash
 pip install -e ".[test]"
